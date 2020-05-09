@@ -4,7 +4,7 @@
 <!-- > [English](CleanABAP.md)&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp; -->
 <!-- [Chinese](CleanABAP_fr_FR.md)&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp; -->
 <!-- [French](CleanABAP_fr_FR.md)&nbsp;&nbsp;&nbsp;·&nbsp;&nbsp;&nbsp; -->
-<!-- [German](CleanABAP_fr_FR.md)
+<!-- [German](CleanABAP_fr_FR.md) -->
 
 This guide is an adoption of
 [Robert C. Martin's _Clean Code_]
@@ -204,10 +204,11 @@ The [Cheat Sheet](cheat-sheet/CheatSheet.md) is a print-optimized version.
   - [Test Classes](#test-classes)
     - [Call local test classes by their purpose](#call-local-test-classes-by-their-purpose)
     - [Put tests in local classes](#put-tests-in-local-classes)
+    - [Put help methods in help classes](#put-help-methods-in-help-classes)
     - [How to execute test classes](#how-to-execute-test-classes)
   - [Code Under Test](#code-under-test)
     - [Name the code under test meaningfully, or default to CUT](#name-the-code-under-test-meaningfully-or-default-to-cut)
-    - [Test interfaces, not classes](#test-interfaces-not-classes)
+    - [Test against interfaces, not implementations](#test-against-interfaces-not-implementations)
     - [Extract the call to the code under test to its own method](#extract-the-call-to-the-code-under-test-to-its-own-method)
   - [Injection](#injection)
     - [Use dependency inversion to inject test doubles](#use-dependency-inversion-to-inject-test-doubles)
@@ -282,6 +283,19 @@ as it may introduce a breach between old and new code,
 up to a degree where sections like
 [Avoid encodings, esp. Hungarian notation and prefixes](#avoid-encodings-esp-hungarian-notation-and-prefixes)
 are better ignored.
+
+Try not to mix different development styles within the same
+development object when carrying out a refactoring. If the
+legacy code contains only up-front declarations, and a complete
+refactoring into using inline declarations is not feasible, it
+is probably better to stick with the legacy style rather than
+mixing the two styles. There are several similar situations
+where mixing styles could cause confusion, for example:
+
+- Mixing `REF TO` and `FIELD-SYMBOL` when looping.
+- Mixing `NEW` and `CREATE OBJECT` when calling a `CONSTRUCTOR`.
+- Mixing `RETURNING` and `EXPORTING` in the method signatures of
+methods only returning / exporting one parameter.
 
 We observed good results with a four-step plan for refactoring:
 
@@ -778,6 +792,8 @@ ENDCLASS.
 ```
 
 instead of mixing unrelated things
+or misleading people to the conclusion
+that constants collections could be "implemented":
 
 ```ABAP
 " anti-pattern
@@ -828,13 +844,17 @@ CONSTANTS:
 The group also allows you group-wise access, for example for input validation:
 
 ```ABAP
-DO number_of_constants TIMES.
+DO.
   ASSIGN COMPONENT sy-index OF STRUCTURE message_severity TO FIELD-SYMBOL(<constant>).
-  IF <constant> = input.
-    is_valid = abap_true.
+  IF sy-subrc IS INITIAL.
+    IF input = <constant>.
+      DATA(is_valid) = abap_true.
+      RETURN.
+    ENDIF.
+  ELSE.
     RETURN.
   ENDIF.
-ENDWHILE.
+ENDDO.
 ```
 
 > Read more in _Chapter 17: Smells and Heuristics: G27: Structure over Convention_ of [Robert C. Martin's _Clean Code_].
@@ -909,7 +929,7 @@ ENDIF.
 
 ```ABAP
 DATA name TYPE seoclsname.
-DATA reader TYPE REF TO /dirty/reader.
+DATA reader TYPE REF TO reader.
 ```
 
 Chaining suggests the defined variables are related on a logical level.
@@ -925,7 +945,7 @@ colons, dots, and commas, that are not worth the effort.
 " anti-pattern
 DATA:
   name   TYPE seoclsname,
-  reader TYPE REF TO /dirty/reader.
+  reader TYPE REF TO reader.
 ```
 
 > Also refer to [Don't align type clauses](#dont-align-type-clauses)  
@@ -934,6 +954,12 @@ DATA:
 ### Prefer REF TO to FIELD-SYMBOL
 
 > [Clean ABAP](#clean-abap) > [Content](#content) > [Variables](#variables) > [This section](#prefer-ref-to-to-field-symbol)
+
+> This section [is being challenged](https://github.com/SAP/styleguides/issues/115).
+> `FIELD-SYMBOL`s seem to be considerably faster
+> when iterating internal tables,
+> such that the recommendation to use `REF TO`
+> for these cases may worsen performance.
 
 ```ABAP
 LOOP AT components REFERENCE INTO DATA(component).
@@ -1032,7 +1058,7 @@ DATA itab1 TYPE STANDARD TABLE OF row_type WITH EMPTY KEY.
 
 > Following [Horst Keller's blog on _Internal Tables with Empty Key_](https://blogs.sap.com/2013/06/27/abap-news-for-release-740-internal-tables-with-empty-key/)
 > 
-> **Caution:** `SORT` on internal tables with `EMPTY KEY` will not sort at all,
+> **Caution:** `SORT` on internal tables with `EMPTY KEY` (without explicit sort fields) will not sort at all,
 > but syntax warnings are issued in case the key's emptiness can be determined statically.
 
 ### Prefer INSERT INTO TABLE to APPEND TO
@@ -1491,7 +1517,7 @@ ENDIF.
 > [Clean ABAP](#clean-abap) > [Content](#content) > [Ifs](#ifs) > [This section](#keep-the-nesting-depth-low)
 
 ```ABAP
-" ani-pattern
+" anti-pattern
 IF <this>.
   IF <that>.
   ENDIF.
@@ -1903,7 +1929,7 @@ In local classes, make the constructor private, as it should be.
 
 #### Prefer multiple static creation methods to optional parameters
 
-> [Clean ABAP](#clean-abap) > [Content](#content) > [Classes](#classes) > [Constructors](#constructors) > [This section](#prefer-multiple-static-factory-methods-to-optional-parameters)
+> [Clean ABAP](#clean-abap) > [Content](#content) > [Classes](#classes) > [Constructors](#constructors) > [This section](#prefer-multiple-static-creation-methods-to-optional-parameters)
 
 ```ABAP
 CLASS-METHODS describe_by_data IMPORTING data TYPE any [...]
@@ -2632,10 +2658,11 @@ It should do it in the best way possible.
 A method likely does one thing if
 
 - it has [few input parameters](#aim-for-few-importing-parameters-at-best-less-than-three)
-- that [don't include Boolean parameters](#split-method-instead-of-boolean-input-parameter)
+- it [doesn't include Boolean parameters](#split-method-instead-of-boolean-input-parameter)
 - it has [exactly one output parameter](#return-export-or-change-exactly-one-parameter)
 - it is [small](#keep-methods-small)
 - it [descends one level of abstraction](#descend-one-level-of-abstraction)
+- it only [throws one type of exception](#throw-one-type-of-exception)
 - you cannot extract meaningful other methods
 - you cannot meaningfully group its statements into sections
 
@@ -2871,7 +2898,7 @@ METHOD read_customizing.
     RETURN.
   ENDIF.
   " do whatever needs doing
-ENDMETHOD:
+ENDMETHOD.
 ```
 
 You can avoid the question completely by reversing the validation
@@ -2882,7 +2909,7 @@ METHOD read_customizing.
   IF keys IS NOT INITIAL.
     " do whatever needs doing
   ENDIF.
-ENDMETHOD:
+ENDMETHOD.
 ```
 
 In any case, consider whether returning nothing is really the appropriate behavior.
@@ -2904,6 +2931,7 @@ The statement behaves differently in different positions and may lead to unclear
 For example,
 [`CHECK` in a `LOOP` ends the current iteration and proceeds with the next one](https://help.sap.com/doc/abapdocu_752_index_htm/7.52/en-US/abapcheck_loop.htm);
 people might accidentally expect it to end the method or exit the loop.
+Prefer using an `IF` statement in combination with `CONTINUE` instead, since `CONTINUE` only can be used in loops.
 
 > Based on the [section _Exiting Procedures_ in the ABAP Programming Guidelines](https://help.sap.com/doc/abapdocu_751_index_htm/7.51/en-US/index.htm?file=abenexit_procedure_guidl.htm).
 > Note that this contradicts the [keyword reference for `CHECK` in loops](https://help.sap.com/doc/abapdocu_752_index_htm/7.52/en-US/abapcheck_loop.htm).
@@ -3918,8 +3946,8 @@ When this makes the lines very long, you can break the parameters into the next 
 
 ```ABAP
 DATA(sum) = add_two_numbers(
-                   value_1 = round_up( input DIV 7 ) * 42 + round_down( 19 * step_size )
-                   value_2 = VALUE #( ( `Calculation failed with a very weird result` ) ) ).
+                value_1 = round_up( input DIV 7 ) * 42 + round_down( 19 * step_size )
+                value_2 = VALUE #( ( `Calculation failed with a very weird result` ) ) ).
 ```
 
 ### If you break, indent parameters under the call
@@ -3928,8 +3956,8 @@ DATA(sum) = add_two_numbers(
 
 ```ABAP
 DATA(sum) = add_two_numbers(
-                   value_1 = 5
-                   value_2 = 6 ).
+                value_1 = 5
+                value_2 = 6 ).
 ```
 
 Aligning the parameters elsewhere makes it hard to spot what they belong to:
@@ -4199,6 +4227,41 @@ class hiring_test defintion
 endclass.
 ```
 
+#### Put help methods in help classes
+
+> [Clean ABAP](#clean-abap) > [Content](#content) > [Testing](#testing) > [Test Classes](#test-classes) > [This section](#put-help-methods-in-help-classes)
+
+Put help methods used by several test classes in a help class. Make the help methods available through 
+inheritance (is-a relationship) or delegation (has-a relationship).
+
+```abap
+" inheritance example
+
+CLASS lth_unit_tests DEFINITION ABSTRACT.
+
+  PROTECTED SECTION.
+    CLASS-METHODS assert_activity_entity
+      IMPORTING
+        actual_activity_entity TYPE REF TO zcl_activity_entity
+        expected_activity_entity TYPE REF TO zcl_activity_entity.
+    ...
+ENDCLASS.
+
+CLASS lth_unit_tests IMPLEMENTATION.
+
+  METHOD assert_activity_entity.
+    ...
+  ENDMETHOD.
+
+ENDCLASS.
+
+CLASS ltc_unit_tests DEFINITION INHERITING FROM lth_unit_tests FINAL FOR TESTING
+  DURATION SHORT
+  RISK LEVEL HARMLESS.
+  ...
+ENDCLASS.
+```
+
 #### How to execute test classes
 
 > [Clean ABAP](#clean-abap) > [Content](#content) > [Testing](#testing) > [Test Classes](#test-classes) > [This section](#how-to-execute-test-classes)
@@ -4249,9 +4312,9 @@ Especially in unclean and confusing tests, calling the variable `cut`
 can temporarily help the reader see what's actually tested.
 However, tidying up the tests is the actual way to go for the long run.
 
-#### Test interfaces, not classes
+#### Test against interfaces, not implementations
 
-> [Clean ABAP](#clean-abap) > [Content](#content) > [Testing](#testing) > [Code Under Test](#code-under-test) > [This section](#test-interfaces-not-classes)
+> [Clean ABAP](#clean-abap) > [Content](#content) > [Testing](#testing) > [Code Under Test](#code-under-test) > [This section](#test-against-interfaces-not-implementations)
 
 A practical consequence of the [_Test publics, not private internals_](#test-publics-not-private-internals),
 type your code under test with an _interface_
